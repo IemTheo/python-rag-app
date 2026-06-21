@@ -100,3 +100,45 @@ def save_processed_files(processed):
 
 
 
+def download_file(file_id: str, file_name: str) -> str:
+#Download file by ID from Google Drive. Return the file content as a string.
+    request = drive_service.files().get_media(fileId=file_id)
+    fh = io.BytesIO()
+    downloader = MediaIoBaseDownload(fh, request)
+    done = False
+
+    console.print(f"[bold green]Downloading file:[/] {file_name}")
+    with Progress(
+        SpinnerColumn(),
+        "[progress.description] {task.description}",
+        BarColumn(),
+        "[progress.percentage] {task.percentage:>3.0f}%",
+        TimeElapsedColumn(),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Downloading...", total=100)
+        while not done:
+            status, done = downloader.next_chunk()
+            if status:
+                progress.update(task, completed=int(status-progress() * 100))
+    
+    fh. seek(e)
+    try:
+        content = fh.read().decode("utf-8")
+    except Exception as e:
+        console.print(f"[red]Error decoding file content: {e} [/red]")
+        content = ""
+    return content
+
+def split_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list:
+#Split large text into smaller chunks for embedding.
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk) 
+        if end >= len(text):
+            break
+        start = end - overlap
+    return chunks

@@ -142,3 +142,93 @@ def split_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list:
             break
         start = end - overlap
     return chunks
+
+
+
+def process_file(file: dict) :
+    #Download the file, split it, embed each chunk, upsert into Pinecone, and record in processed_ files. json.
+
+    console.rule(f"[bold blue]Processing File: {file['name']}")
+    
+    content = download_file(file["id"], file["name"])
+    if not content:
+        console.print(f"[red]No content for file {file['name']}[/red]")
+        return
+
+    chunks = split_text (content)
+    console-print(f"[green)Split text into {len(chunks)} chunks.[/green]")
+
+    vector_ids = []
+    with Progress(
+    "[progress description] {task.description}",
+    BarColumn(),
+    "[progress-percentage] {task.percentage:>3.0f}%",
+    transient=True,
+    ) as progress:
+        task = progress.add_task("Embedding & Upserting", total=len(chunks))
+        for i, chunk in enumerate (chunks) :
+            embedding = get_embedding(chunk)
+            if embedding is None:
+                continue
+            
+            vector_id = f"{file['id']}_{1}"
+            vector_ids.append(vector_id)
+            metadata = {
+                "file_id": file["id"],
+                "file_name": file ["name"],
+                "chunk_index": i,
+                "text": chunk[:200] # store a short preview    
+            }
+
+            try:
+                index.upsert(
+                    vectors=[
+                        {
+                            "id": vector_id,
+                            "values": embedding,
+                            "metadata": metadata
+                        }
+                    ],
+                    namespace="default"
+                )
+            except Exception as e:
+                console-print(f"[red]Error upserting vector: {e}(/red]")
+            
+            time.sleep(0.1) # slight delay to avoid rate limits
+            progress.advance(task)
+
+
+    # 4. Update processed_files. json
+    processed = load_processed_files()
+    processed [file['id']] = {
+        "modified": file["modifiedTime"],
+        "vectors": vector_ids,
+        "name": file["name"]
+    }
+    save_processed_files(processed)
+
+    console.print("[bold green]File processed & upserted to Pinecone.[/bold green]\n")
+
+def delete_vectors(file_id: str):
+    #Remove existing vectors for a file via known vector IDs or fallback to metadata filter.
+    
+    processed = load_processed_files()
+    file_data = processed.get(file_id, {})
+
+    #Strategy 1: If we have stored vector IDs, try deleting them 
+    if file_data.get('vectors'):
+        try:
+            index.delete(ids=file_data('vectors'], namespace="default")
+            console.print(f"Deleted (len(file_data['vectors'])} vectors for (file_id}")
+            return True
+        except Exception as e:
+                console.print(f"[red]Vector ID deletion failed: (e)[/red]")
+    
+    #Strategy 2: Fallback to metadata filter
+    try:
+        index.delete(filter={"file_id": {"seq": file_id}}, namespace="default") 
+        console.print(f"Used metadata filter to delete vectors for {file_id}") 
+        return True 
+    except Exception as e:
+        console.print(f"[red]Metadata filter deletion failed: {e}[/red]")
+        return False

@@ -20,8 +20,6 @@ from pinecone import Pinecone, ServerlessSpec
 
 console = Console()
 
-
-
 load_dotenv()
 
 SERVICE_ACCOUNT_FILE = os. environ.get ("GOOGLE_DRIVE_SERVICE_ACCOUNT_FILE")
@@ -38,8 +36,6 @@ if not all([
 ]):
     console.print("[red]Error: Missing one or more required environment variables. [/red]")
     sys.exit(1)
-
-
 
 pc = Pinecone(api_key=PINECONE_API_KEY)
 existing_indexes = [idx["name"] for idx in pc.list_indexes()]
@@ -82,10 +78,6 @@ SCOPES = ['https://www.googleapis.com/auth/drive']
 credentials = service_account.Credentials.from_service_account_file(SERVICE_ACCOUNT_FILE, scopes=SCOPES)
 drive_service = build('drive', 'v3', credentials=credentials)
 
-
-
-
-
 PROCESSED_FILES_PATH = "processed_files.json"
 def load_processed_files():
     #Returns a dict with ( file_id: { modified: str, vectors: [vector_ids], name: str ), ...)
@@ -97,8 +89,6 @@ def load_processed_files():
 def save_processed_files(processed):
     with open (PROCESSED_FILES_PATH, "w") as f:
         json.dump(processed, f, indent=2)
-
-
 
 def download_file(file_id: str, file_name: str) -> str:
 #Download file by ID from Google Drive. Return the file content as a string.
@@ -142,8 +132,6 @@ def split_text(text: str, chunk_size: int = 500, overlap: int = 100) -> list:
             break
         start = end - overlap
     return chunks
-
-
 
 def process_file(file: dict) :
     #Download the file, split it, embed each chunk, upsert into Pinecone, and record in processed_ files. json.
@@ -197,7 +185,6 @@ def process_file(file: dict) :
             time.sleep(0.1) # slight delay to avoid rate limits
             progress.advance(task)
 
-
     # 4. Update processed_files. json
     processed = load_processed_files()
     processed [file['id']] = {
@@ -232,3 +219,47 @@ def delete_vectors(file_id: str):
     except Exception as e:
         console.print(f"[red]Metadata filter deletion failed: {e}[/red]")
         return False
+
+def poll_drive_folder():
+# Return a list of files in the target folder.
+# Returns an empty list on error or if none found.
+
+    try:
+        results = drive_service.files().list(
+        q=f"'{GOOGLE_DRIVE_FOLDER_ID}' in parents and trashed = false",
+        fields="files(id, name, modifiedTime)"
+        ).execute()
+        return results.get("files", [])
+    except Exception as e:
+        console-print(f"[red]Drive polling error: {e} [/red]")
+        return []
+
+
+def update_files():
+# Main logic to sync files from Google Drive into Pinecone.
+# - Detect removed files (delete vectors).
+# - For new or modified files, re-process and upsert.
+
+    console-print(f"\n== Update started {datetime.now() isoformat ()} ==\n")
+    processed = load_processed_files)
+    try:
+        current_files = poll_drive_folder() or []
+        current_ids = {f['id'] for f in current_files}
+
+        # 1) Handle deletions
+
+        for file_id in list(processed.keys()):
+            if file_id not in current_ids:
+                console-print(f"Removing vectors for file (no longer exists in Drive): (file_id)") 
+                if delete_vectors(file_id):
+                    del processed(file_id)
+                    save_processed_files(processed)
+
+        # 2) Handle new or updated i
+        for file in current_files:
+            existing = processed.get(file['id'])
+            if (not existing) or (file['modifiedTime'] > existing['modified']):
+                process_file(file)
+    except Exception as e:
+        console.print(f"Update failed: {str(e)}")
+        raise

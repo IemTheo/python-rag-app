@@ -2,10 +2,11 @@ google-generativeai
 google-genai
 google-api-python-client
 google-auth
-pinecone-client
 pinecone
 rich
 requests
 numpy
 groq
 load_dotenv
+python-docx
+pypdf
